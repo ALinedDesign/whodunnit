@@ -2,13 +2,13 @@
 Contributors: alineddesign
 Tags: performance, profiler, debug, queries, database
 Requires at least: 6.0
-Tested up to: 6.7
+Tested up to: 6.9
 Requires PHP: 7.4
 Stable tag: 1.0.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Lightweight performance profiler for WordPress. Find out which plugins are hogging your database with a real-time toast overlay and detailed admin profiler page.
+Lightweight performance profiler. Shows which plugins are hogging your database via toast overlay and admin profiler.
 
 == Description ==
 
@@ -24,11 +24,11 @@ A floating dark-themed panel appears on every page, showing:
 * Top sources by query time (visual bar chart)
 * Slow queries (>20ms)
 
-The toast is only visible to administrators and can be minimized, closed, or permanently hidden. Add `?perf=0` to any URL to temporarily hide it, or `?perf=debug` for a full-page query debugger.
+The toast is only visible to administrators and can be minimized, closed, or permanently hidden. Add `?perf=0` to any URL to temporarily hide it.
 
 = Admin Profiler Page (Tools > Whodunnit) =
 
-Three tabs provide deep diagnostics:
+Four tabs provide deep diagnostics:
 
 **Overview**
 
@@ -50,11 +50,15 @@ Three tabs provide deep diagnostics:
 **Server Health**
 
 * Filesystem health (cache directories, uploads, log files)
-* Cron health (scheduled events, overdue jobs)
 * PHP configuration (memory, execution time, OPcache status)
 * Object cache detection (Redis, Memcached, or none)
-* Active hooks analysis (callbacks per hook)
+* Execution time breakdown
 * Problem file detection (oversized logs, error files in web root)
+
+**Debug**
+
+* Full per-source query list with live filtering
+* Requires SAVEQUERIES (enabled automatically for this tab)
 
 = Key Features =
 
@@ -95,18 +99,17 @@ Yes, with caveats. The Overview tab is safe for production use. Deep Scan and Se
 1. Toast overlay showing real-time performance metrics.
 2. Overview tab with memory, queries, and autoload analysis.
 3. Deep Scan showing query breakdown by plugin source.
-4. Server Health tab with filesystem and cron diagnostics.
+4. Server Health tab with filesystem and PHP diagnostics.
 
 == Changelog ==
 
 = 1.0.0 =
 * Initial release.
-* Real-time toast overlay with query count, memory, and DB time.
-* Admin profiler page with Overview, Deep Scan, and Server Health tabs.
-* Query analysis by plugin source.
-* Slow query detection.
-* Autoload analysis.
-* Rewrite rules analysis.
-* Cron health monitoring.
-* Filesystem health checks.
-* PHP and server configuration display.
+* Real-time toast overlay with page load time, query count, DB time, peak memory, top sources by query time, and slow queries.
+* Admin profiler page under Tools with Overview, Deep Scan, Server Health, and Debug tabs.
+* Query attribution by plugin, theme, or mu-plugin source.
+* Slow query detection with SQL preview and worst-offender analysis.
+* Autoloaded options analysis and database cleanup stats.
+* Rewrite rules analysis grouped by source plugin.
+* Filesystem health, PHP configuration, OPcache diagnostics, and object cache detection.
+* SAVEQUERIES enabled only for logged-in administrators, and only on the tabs that need it.

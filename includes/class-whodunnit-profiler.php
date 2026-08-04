@@ -5,7 +5,7 @@
  * Access: Tools > Whodunnit
  * Query params:
  *   ?savequeries=1  — Detailed query breakdown by plugin source
- *   ?serverhealth=1 — Filesystem, cron, PHP config diagnostics
+ *   ?serverhealth=1 — Filesystem, PHP config, object cache diagnostics
  *
  * @package Whodunnit
  */
@@ -16,15 +16,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class Whodunnit_Profiler {
 
+	/**
+	 * Hook suffix returned by add_management_page(), used to scope the
+	 * stylesheet to this page only.
+	 *
+	 * @var string
+	 */
+	private static $hook_suffix = '';
+
 	public static function init() {
 		add_action( 'admin_menu', [ __CLASS__, 'add_menu_page' ] );
+		add_action( 'admin_enqueue_scripts', [ __CLASS__, 'enqueue_styles' ] );
 	}
 
 	/**
 	 * Register the admin menu page under Tools.
 	 */
 	public static function add_menu_page() {
-		add_management_page(
+		self::$hook_suffix = add_management_page(
 			'Whodunnit',
 			'Whodunnit',
 			'manage_options',
@@ -34,18 +43,43 @@ class Whodunnit_Profiler {
 	}
 
 	/**
+	 * Enqueue the profiler page stylesheet.
+	 *
+	 * Registered with a false src so the handle carries inline CSS only —
+	 * there is no separate stylesheet file to request.
+	 *
+	 * @param string $hook Current admin page hook suffix.
+	 */
+	public static function enqueue_styles( $hook ) {
+		if ( empty( self::$hook_suffix ) || $hook !== self::$hook_suffix ) {
+			return;
+		}
+
+		wp_register_style( 'whodunnit-admin', false, array(), WHODUNNIT_VERSION );
+		wp_enqueue_style( 'whodunnit-admin' );
+		wp_add_inline_style( 'whodunnit-admin', wp_kses( self::get_admin_css(), array() ) );
+	}
+
+	/**
 	 * Render the profiler page.
 	 */
 	public static function render_page() {
 		global $wpdb;
 
-		$memory           = memory_get_peak_usage( true ) / 1024 / 1024;
-		$plugins          = count( get_option( 'active_plugins', [] ) );
-		$queries          = $wpdb->num_queries;
-		$savequeries_on   = defined( 'SAVEQUERIES' ) && SAVEQUERIES;
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Admin page, nonce verified by WordPress menu system.
-		$serverhealth_on  = isset( $_GET['serverhealth'] );
-		$toast_enabled    = get_option( 'whodunnit_toast_enabled', '1' );
+		// Tab routing — sanitised at read in whodunnit_read_query_param().
+		// The page itself is gated by manage_options via add_management_page().
+		$tab               = whodunnit_read_query_param( 'tab' );
+		$legacy_savequeries = whodunnit_read_query_param( 'savequeries' ) === '1';
+		$legacy_health      = whodunnit_read_query_param( 'serverhealth' ) === '1';
+
+		$savequeries_on  = $tab === 'deep' || $legacy_savequeries;
+		$serverhealth_on = $tab === 'health' || $legacy_health;
+		$debug_on        = $tab === 'debug';
+
+		$memory        = memory_get_peak_usage( true ) / 1024 / 1024;
+		$plugins       = count( get_option( 'active_plugins', array() ) );
+		$queries       = $wpdb->num_queries;
+		$toast_enabled = get_option( 'whodunnit_toast_enabled', '1' );
 
 		// Autoload analysis.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Performance diagnostic tool, caching would defeat the purpose.
@@ -107,7 +141,6 @@ class Whodunnit_Profiler {
 			} );
 		}
 
-		self::render_styles();
 		?>
 		<div class="wrap whodunnit">
 			<h1>Whodunnit</h1>
@@ -115,39 +148,47 @@ class Whodunnit_Profiler {
 
 			<div class="nav-tabs">
 				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit' ) ); ?>"
-				   class="<?php echo esc_attr( ! $savequeries_on && ! $serverhealth_on ? 'active' : '' ); ?>">Overview</a>
-				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&savequeries=1' ) ); ?>"
+				   class="<?php echo esc_attr( ! $savequeries_on && ! $serverhealth_on && ! $debug_on ? 'active' : '' ); ?>">Overview</a>
+				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&tab=deep' ) ); ?>"
 				   class="<?php echo esc_attr( $savequeries_on ? 'active' : '' ); ?>">Deep Scan</a>
-				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&serverhealth=1' ) ); ?>"
+				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&tab=health' ) ); ?>"
 				   class="<?php echo esc_attr( $serverhealth_on ? 'active' : '' ); ?>">Server Health</a>
+				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&tab=debug' ) ); ?>"
+				   class="<?php echo esc_attr( $debug_on ? 'active' : '' ); ?>">Debug</a>
 			</div>
 
 			<?php self::render_toast_toggle( $toast_enabled ); ?>
 
-			<?php self::render_overview( $memory, $plugins, $queries, $autoload_mb, $savequeries_on, $wpdb ); ?>
+			<?php if ( $debug_on ) : ?>
+				<?php self::render_debug_view(); ?>
+			<?php else : ?>
 
-			<?php if ( $savequeries_on && ! empty( $queries_by_plugin ) ) : ?>
-				<?php self::render_query_breakdown( $queries_by_plugin, $slow_queries, $wpdb ); ?>
-			<?php elseif ( ! $savequeries_on ) : ?>
-				<div class="box">
-					<h2>Query Analysis</h2>
-					<p>Click <strong>Deep Scan</strong> above to see which plugins generate the most database queries.</p>
-					<p><em>Note: Deep Scan adds overhead. Use for diagnosis, not production.</em></p>
-				</div>
-			<?php endif; ?>
+				<?php self::render_overview( $memory, $plugins, $queries, $autoload_mb, $savequeries_on, $wpdb ); ?>
 
-			<?php self::render_autoload_table( $large_options ); ?>
-			<?php self::render_rewrite_rules(); ?>
-			<?php self::render_db_cleanup( $revisions, $transients, $expired ); ?>
-			<?php self::render_page_test(); ?>
-			<?php self::render_recommendations( $plugins, $queries, $memory, $revisions, $expired ); ?>
+				<?php if ( $savequeries_on && ! empty( $queries_by_plugin ) ) : ?>
+					<?php self::render_query_breakdown( $queries_by_plugin, $slow_queries, $wpdb ); ?>
+				<?php elseif ( ! $savequeries_on ) : ?>
+					<div class="box">
+						<h2>Query Analysis</h2>
+						<p>Click <strong>Deep Scan</strong> above to see which plugins generate the most database queries.</p>
+						<p><em>Note: Deep Scan adds overhead. Use for diagnosis, not production.</em></p>
+					</div>
+				<?php endif; ?>
 
-			<?php if ( $savequeries_on && ! empty( $queries_by_plugin ) ) : ?>
-				<?php self::render_worst_offenders( $queries_by_plugin, $slow_queries ); ?>
-			<?php endif; ?>
+				<?php self::render_autoload_table( $large_options ); ?>
+				<?php self::render_rewrite_rules(); ?>
+				<?php self::render_db_cleanup( $revisions, $transients, $expired ); ?>
+				<?php self::render_page_test(); ?>
+				<?php self::render_recommendations( $plugins, $queries, $memory, $revisions, $expired ); ?>
 
-			<?php if ( $serverhealth_on ) : ?>
-				<?php self::render_server_health(); ?>
+				<?php if ( $savequeries_on && ! empty( $queries_by_plugin ) ) : ?>
+					<?php self::render_worst_offenders( $queries_by_plugin, $slow_queries ); ?>
+				<?php endif; ?>
+
+				<?php if ( $serverhealth_on ) : ?>
+					<?php self::render_server_health(); ?>
+				<?php endif; ?>
+
 			<?php endif; ?>
 		</div>
 		<?php
@@ -205,9 +246,16 @@ class Whodunnit_Profiler {
 	// Render methods
 	// -------------------------------------------------------------------------
 
-	private static function render_styles() {
-		?>
-		<style>
+	/**
+	 * Profiler page CSS.
+	 *
+	 * Returned as a string rather than echoed so it can go through
+	 * wp_add_inline_style() on a registered handle.
+	 *
+	 * @return string
+	 */
+	private static function get_admin_css() {
+		return '
 			.whodunnit { max-width: 1000px; }
 			.whodunnit .box { background: #fff; border: 1px solid #ccd0d4; padding: 20px; margin-bottom: 20px; }
 			.whodunnit .stat { display: inline-block; background: #f9f9f9; padding: 15px 25px; margin: 0 10px 10px 0; text-align: center; }
@@ -226,8 +274,7 @@ class Whodunnit_Profiler {
 			.whodunnit .nav-tabs a { display: inline-block; padding: 8px 16px; background: #f0f0f0; margin-right: 5px; text-decoration: none; color: #333; border-radius: 3px 3px 0 0; }
 			.whodunnit .nav-tabs a.active { background: #2271b1; color: #fff; }
 			.whodunnit .toast-toggle { margin-bottom: 20px; padding: 10px 15px; background: #f9f9f9; border: 1px solid #ccd0d4; display: flex; align-items: center; gap: 10px; }
-		</style>
-		<?php
+		';
 	}
 
 	private static function render_toast_toggle( $toast_enabled ) {
@@ -481,23 +528,9 @@ class Whodunnit_Profiler {
 			<h2>Quick Page Test</h2>
 			<p>
 				<input type="text" id="whodunnit-test-url" value="<?php echo esc_url( home_url( '/' ) ); ?>" style="width:70%">
-				<button class="button" onclick="whodunnitTestPage()">Test</button>
+				<button type="button" id="whodunnit-test-btn" class="button">Test</button>
 			</p>
 			<div id="whodunnit-result"></div>
-			<script>
-			function whodunnitTestPage() {
-				var url = document.getElementById('whodunnit-test-url').value;
-				document.getElementById('whodunnit-result').innerHTML = 'Testing...';
-				var start = Date.now();
-				fetch(url, {mode:'no-cors'}).then(function() {
-					var time = Date.now() - start;
-					var cls = time > 3000 ? 'bad' : (time > 1500 ? 'warn' : 'good');
-					document.getElementById('whodunnit-result').innerHTML = '<b class="'+cls+'">' + time + 'ms</b> (client-side, includes network)';
-				}).catch(function(e) {
-					document.getElementById('whodunnit-result').innerHTML = 'Error: ' + e.message;
-				});
-			}
-			</script>
 		</div>
 		<?php
 	}
@@ -640,99 +673,78 @@ class Whodunnit_Profiler {
 		// ---- OPcache Diagnostics ----
 		self::render_opcache_diagnostics();
 
-		// ---- HTTP Request Tracking ----
-		self::render_http_requests();
-
 		// ---- Execution Time Breakdown ----
 		self::render_execution_breakdown();
 
 		// Filesystem helpers.
 		$count_files = function ( $dir, $max_depth = 2, $current_depth = 0 ) use ( &$count_files ) {
-			if ( ! is_dir( $dir ) || $current_depth > $max_depth ) {
-				return [ 'count' => 0, 'size' => 0 ];
+			if ( ! is_dir( $dir ) || ! is_readable( $dir ) || $current_depth > $max_depth ) {
+				return array( 'count' => 0, 'size' => 0 );
 			}
 			$count = 0;
 			$size  = 0;
-			$items = @scandir( $dir );
+			$items = scandir( $dir );
 			if ( $items === false ) {
-				return [ 'count' => 0, 'size' => 0 ];
+				return array( 'count' => 0, 'size' => 0 );
 			}
 			foreach ( $items as $item ) {
-				if ( $item === '.' || $item === '..' ) continue;
+				if ( $item === '.' || $item === '..' ) {
+					continue;
+				}
 				$path = $dir . '/' . $item;
 				if ( is_file( $path ) ) {
 					$count++;
-					$size += @filesize( $path );
+					if ( is_readable( $path ) ) {
+						$file_size = filesize( $path );
+						if ( $file_size !== false ) {
+							$size += $file_size;
+						}
+					}
 				} elseif ( is_dir( $path ) && $current_depth < $max_depth ) {
 					$sub    = $count_files( $path, $max_depth, $current_depth + 1 );
 					$count += $sub['count'];
 					$size  += $sub['size'];
 				}
 			}
-			return [ 'count' => $count, 'size' => $size ];
+			return array( 'count' => $count, 'size' => $size );
 		};
 
+		// WP_CONTENT_DIR is used deliberately here. Inspecting the content
+		// directory is this panel's entire purpose — cache dirs and debug.log
+		// live there and have no wp_upload_dir()/plugin_dir_path() equivalent.
+		// This is not path-building for the plugin's own bundled files.
 		$wp_content = WP_CONTENT_DIR;
 		$upload_dir = wp_upload_dir();
 
-		$dirs_to_check = [
-			'Cache Directory' => $wp_content . '/cache',
-			'LiteSpeed Cache' => $wp_content . '/litespeed',
+		$dirs_to_check = array(
+			'Cache Directory'     => $wp_content . '/cache',
+			'LiteSpeed Cache'     => $wp_content . '/litespeed',
 			'Uploads (top level)' => $upload_dir['basedir'],
-			'WP Logs'         => $wp_content . '/debug.log',
-		];
+			'WP Logs'             => $wp_content . '/debug.log',
+		);
 
-		$fs_stats = [];
+		$fs_stats = array();
 		foreach ( $dirs_to_check as $label => $path ) {
 			if ( is_file( $path ) ) {
-				$fs_stats[ $label ] = [
+				$file_size = is_readable( $path ) ? filesize( $path ) : 0;
+				$fs_stats[ $label ] = array(
 					'path'    => $path,
 					'count'   => 1,
-					'size'    => @filesize( $path ) ?: 0,
+					'size'    => $file_size !== false ? $file_size : 0,
 					'is_file' => true,
 					'error'   => null,
-				];
+				);
 			} else {
-				$stats = $count_files( $path, 1 );
-				$fs_stats[ $label ] = [
+				$stats              = $count_files( $path, 1 );
+				$fs_stats[ $label ] = array(
 					'path'    => $path,
 					'count'   => $stats['count'],
 					'size'    => $stats['size'],
 					'is_file' => false,
 					'error'   => is_dir( $path ) ? null : 'Not found',
-				];
+				);
 			}
 		}
-
-		// Cron analysis.
-		$crons         = _get_cron_array();
-		$cron_count    = 0;
-		$overdue_crons = [];
-		$cron_hooks    = [];
-		$now           = time();
-
-		if ( is_array( $crons ) ) {
-			foreach ( $crons as $timestamp => $hooks ) {
-				foreach ( $hooks as $hook => $events ) {
-					$event_count = count( $events );
-					$cron_count += $event_count;
-
-					if ( ! isset( $cron_hooks[ $hook ] ) ) {
-						$cron_hooks[ $hook ] = [ 'count' => 0, 'next' => $timestamp ];
-					}
-					$cron_hooks[ $hook ]['count'] += $event_count;
-
-					if ( $timestamp < $now ) {
-						$overdue_crons[] = [
-							'hook'       => $hook,
-							'scheduled'  => $timestamp,
-							'overdue_by' => $now - $timestamp,
-						];
-					}
-				}
-			}
-		}
-		uasort( $cron_hooks, function ( $a, $b ) { return $b['count'] <=> $a['count']; } );
 
 		// Object cache detection.
 		$object_cache_type = 'None (using database)';
@@ -744,19 +756,10 @@ class Whodunnit_Profiler {
 			} elseif ( class_exists( 'Memcached' ) && defined( 'WP_CACHE' ) && WP_CACHE ) {
 				$object_cache      = true;
 				$object_cache_type = 'Memcached';
+				// Existence check only — the drop-in's contents are never read.
 			} elseif ( file_exists( WP_CONTENT_DIR . '/object-cache.php' ) ) {
 				$object_cache      = true;
 				$object_cache_type = 'Custom (object-cache.php exists)';
-			}
-		}
-
-		// Check object cache drop-in details.
-		$object_cache_detail = '';
-		$dropin = WP_CONTENT_DIR . '/object-cache.php';
-		if ( file_exists( $dropin ) ) {
-			$header = file_get_contents( $dropin, false, null, 0, 500 );
-			if ( preg_match( '/Plugin Name:\s*(.+)/i', $header, $m ) ) {
-				$object_cache_detail = trim( $m[1] );
 			}
 		}
 
@@ -770,29 +773,25 @@ class Whodunnit_Profiler {
 
 		// Problem files.
 		$problem_files = [];
-		$debug_log     = $wp_content . '/debug.log';
-		if ( file_exists( $debug_log ) && filesize( $debug_log ) > 10 * 1024 * 1024 ) {
-			$problem_files[] = [ 'file' => 'debug.log', 'size' => filesize( $debug_log ), 'issue' => 'Very large log file' ];
-		}
-		$error_log = ABSPATH . 'error_log';
-		if ( file_exists( $error_log ) ) {
-			$problem_files[] = [ 'file' => 'error_log (root)', 'size' => filesize( $error_log ), 'issue' => 'Error log in web root' ];
-		}
 
-		// Active hooks.
-		global $wp_filter;
-		$heavy_hooks    = [];
-		$hooks_to_check = [ 'init', 'wp_loaded', 'admin_init', 'wp_head', 'wp_footer', 'the_content', 'save_post', 'user_has_cap' ];
-		foreach ( $hooks_to_check as $hook ) {
-			if ( isset( $wp_filter[ $hook ] ) ) {
-				$count = 0;
-				foreach ( $wp_filter[ $hook ]->callbacks as $priority => $callbacks ) {
-					$count += count( $callbacks );
-				}
-				$heavy_hooks[ $hook ] = $count;
+		$debug_log = $wp_content . '/debug.log';
+		if ( is_readable( $debug_log ) ) {
+			$debug_log_size = filesize( $debug_log );
+			if ( $debug_log_size > 10 * 1024 * 1024 ) {
+				$problem_files[] = [ 'file' => 'debug.log', 'size' => $debug_log_size, 'issue' => 'Very large log file' ];
 			}
 		}
-		arsort( $heavy_hooks );
+
+		// get_home_path() requires wp-admin/includes/file.php. This method only
+		// runs on the Tools > Whodunnit page, which is admin-only, so the
+		// include is always available in this context.
+		if ( ! function_exists( 'get_home_path' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/file.php';
+		}
+		$error_log = get_home_path() . 'error_log';
+		if ( is_readable( $error_log ) ) {
+			$problem_files[] = [ 'file' => 'error_log (root)', 'size' => filesize( $error_log ), 'issue' => 'Error log in web root' ];
+		}
 
 		// ---- Render ----
 		?>
@@ -848,66 +847,12 @@ class Whodunnit_Profiler {
 		</div>
 
 		<div class="box">
-			<h2>Cron Health</h2>
-			<p>Stuck or overdue cron jobs can cause performance issues and failed background tasks.</p>
-
-			<div class="stat">
-				<b class="<?php echo esc_attr( $cron_count > 100 ? 'warn' : 'good' ); ?>"><?php echo (int) $cron_count; ?></b>
-				Scheduled Events
-			</div>
-			<div class="stat">
-				<b class="<?php echo esc_attr( count( $overdue_crons ) > 10 ? 'bad' : ( count( $overdue_crons ) > 0 ? 'warn' : 'good' ) ); ?>">
-					<?php echo (int) count( $overdue_crons ); ?>
-				</b> Overdue
-			</div>
-
-			<?php if ( ! empty( $overdue_crons ) ) : ?>
-			<h4 style="margin-top:20px;color:#dba617">Overdue Cron Jobs</h4>
-			<table>
-				<thead><tr><th>Hook</th><th>Scheduled</th><th>Overdue By</th></tr></thead>
-				<tbody>
-					<?php foreach ( array_slice( $overdue_crons, 0, 10 ) as $oc ) : ?>
-					<tr>
-						<td><code><?php echo esc_html( $oc['hook'] ); ?></code></td>
-						<td><?php echo esc_html( gmdate( 'Y-m-d H:i:s', $oc['scheduled'] ) ); ?></td>
-						<td class="warn"><?php echo esc_html( human_time_diff( $oc['scheduled'] ) ); ?></td>
-					</tr>
-					<?php endforeach; ?>
-				</tbody>
-			</table>
-			<p><em>Overdue crons may indicate WP-Cron isn't running. Check if DISABLE_WP_CRON is set and a system cron is configured.</em></p>
-			<?php endif; ?>
-
-			<details style="margin-top:15px">
-				<summary style="cursor:pointer;color:#2271b1">Show all cron hooks (<?php echo (int) count( $cron_hooks ); ?>)</summary>
-				<table style="margin-top:10px">
-					<thead><tr><th>Hook</th><th>Events</th><th>Next Run</th></tr></thead>
-					<tbody>
-						<?php foreach ( array_slice( $cron_hooks, 0, 30, true ) as $hook => $data ) : ?>
-						<tr>
-							<td><code style="font-size:11px"><?php echo esc_html( $hook ); ?></code></td>
-							<td><?php echo (int) $data['count']; ?></td>
-							<td><?php echo esc_html( gmdate( 'Y-m-d H:i', $data['next'] ) ); ?></td>
-						</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
-			</details>
-		</div>
-
-		<div class="box">
 			<h2>Object Cache</h2>
 			<table>
 				<tr>
 					<td><strong>Type</strong></td>
 					<td class="<?php echo esc_attr( $object_cache ? 'good' : 'warn' ); ?>"><?php echo esc_html( $object_cache_type ); ?></td>
 				</tr>
-				<?php if ( $object_cache_detail ) : ?>
-				<tr>
-					<td><strong>Drop-in</strong></td>
-					<td><?php echo esc_html( $object_cache_detail ); ?></td>
-				</tr>
-				<?php endif; ?>
 				<tr>
 					<td><strong>Working</strong></td>
 					<td class="<?php echo esc_attr( $object_cache_working ? 'good' : 'bad' ); ?>">
@@ -927,34 +872,8 @@ class Whodunnit_Profiler {
 		</div>
 
 		<div class="box">
-			<h2>Active Hooks Analysis</h2>
-			<p>Hooks with many callbacks can slow down execution.</p>
-			<table>
-				<thead><tr><th>Hook</th><th>Callbacks</th><th>Status</th></tr></thead>
-				<tbody>
-					<?php
-					foreach ( $heavy_hooks as $hook => $count ) :
-						$class  = $count > 50 ? 'bad' : ( $count > 25 ? 'warn' : 'good' );
-						$status = $count > 50 ? 'Very heavy' : ( $count > 25 ? 'Heavy' : 'Normal' );
-						?>
-						<tr>
-							<td><code><?php echo esc_html( $hook ); ?></code></td>
-							<td class="<?php echo esc_attr( $class ); ?>"><?php echo (int) $count; ?></td>
-							<td class="<?php echo esc_attr( $class ); ?>"><?php echo esc_html( $status ); ?></td>
-						</tr>
-					<?php endforeach; ?>
-				</tbody>
-			</table>
-			<p style="margin-top:10px"><em>Note: <code>user_has_cap</code> fires on every permission check. Many callbacks here = slow admin.</em></p>
-		</div>
-
-		<div class="box">
 			<h2>Server Health Recommendations</h2>
 			<ul>
-				<?php if ( ! empty( $overdue_crons ) ) : ?>
-				<li class="warn"><strong><?php echo (int) count( $overdue_crons ); ?> overdue cron jobs</strong>. Check if WP-Cron is working or set up a system cron.</li>
-				<?php endif; ?>
-
 				<?php foreach ( $fs_stats as $label => $stats ) : ?>
 					<?php if ( ! $stats['error'] && $stats['count'] > 5000 ) : ?>
 					<li class="<?php echo esc_attr( $stats['count'] > 10000 ? 'bad' : 'warn' ); ?>">
@@ -967,16 +886,12 @@ class Whodunnit_Profiler {
 				<li class="warn"><strong>No object cache</strong>. Install Redis or Memcached for better performance.</li>
 				<?php endif; ?>
 
-				<?php if ( ! ( function_exists( 'opcache_get_status' ) && @opcache_get_status( false ) ) ) : ?>
+				<?php if ( ! ( function_exists( 'opcache_get_status' ) && opcache_get_status( false ) ) ) : ?>
 				<li class="bad"><strong>OPcache not enabled</strong>. This is likely your biggest performance issue. Enable it in PHP settings to cache compiled PHP — can save 2-3 seconds per page load with 60+ plugins.</li>
 				<?php endif; ?>
 
 				<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG && defined( 'WP_DEBUG_LOG' ) && WP_DEBUG_LOG ) : ?>
 				<li class="warn"><strong>Debug logging is ON</strong>. This creates log files and slows the site. Disable on production.</li>
-				<?php endif; ?>
-
-				<?php if ( isset( $heavy_hooks['user_has_cap'] ) && $heavy_hooks['user_has_cap'] > 30 ) : ?>
-				<li class="warn"><strong>user_has_cap has <?php echo (int) $heavy_hooks['user_has_cap']; ?> callbacks</strong>. Permission checks are expensive. Consider caching role checks.</li>
 				<?php endif; ?>
 			</ul>
 		</div>
@@ -988,8 +903,8 @@ class Whodunnit_Profiler {
 	 */
 	private static function render_opcache_diagnostics() {
 		$opcache_available = function_exists( 'opcache_get_status' );
-		$opcache_status    = $opcache_available ? @opcache_get_status( false ) : false;
-		$opcache_config    = $opcache_available && function_exists( 'opcache_get_configuration' ) ? @opcache_get_configuration() : false;
+		$opcache_status    = $opcache_available ? opcache_get_status( false ) : false;
+		$opcache_config    = $opcache_available && function_exists( 'opcache_get_configuration' ) ? opcache_get_configuration() : false;
 		?>
 		<div class="box" style="<?php echo ! $opcache_status ? 'background:#fff0f0;border-color:#d63638;' : ''; ?>">
 			<h2>OPcache</h2>
@@ -1120,107 +1035,29 @@ class Whodunnit_Profiler {
 	}
 
 	/**
-	 * Render outgoing HTTP requests made during this page load.
-	 */
-	private static function render_http_requests() {
-		$requests = $GLOBALS['whodunnit_http_requests'] ?? [];
-
-		?>
-		<div class="box">
-			<h2>Outgoing HTTP Requests</h2>
-			<p>External HTTP calls block page rendering. Each request can add 0.5-5 seconds.</p>
-
-			<?php if ( empty( $requests ) ) : ?>
-				<p class="good">No outgoing HTTP requests detected during this page load.</p>
-			<?php else : ?>
-				<?php
-				$total_ms = 0;
-				foreach ( $requests as $req ) {
-					if ( isset( $req['duration'] ) ) {
-						$total_ms += $req['duration'];
-					}
-				}
-				?>
-
-				<div style="display:flex;gap:10px;margin-bottom:15px;">
-					<div class="stat">
-						<b class="<?php echo esc_attr( count( $requests ) > 3 ? 'bad' : ( count( $requests ) > 0 ? 'warn' : 'good' ) ); ?>">
-							<?php echo (int) count( $requests ); ?>
-						</b> Requests
-					</div>
-					<div class="stat">
-						<b class="<?php echo esc_attr( $total_ms > 2000 ? 'bad' : ( $total_ms > 500 ? 'warn' : 'good' ) ); ?>">
-							<?php echo esc_html( number_format( $total_ms ) ); ?>ms
-						</b> Total Time
-					</div>
-				</div>
-
-				<table>
-					<thead><tr><th>URL</th><th>Method</th><th>Time</th><th>Status</th></tr></thead>
-					<tbody>
-						<?php foreach ( $requests as $req ) : ?>
-						<tr>
-							<td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-								<code style="font-size:11px;" title="<?php echo esc_attr( $req['url'] ); ?>">
-									<?php echo esc_html( substr( $req['url'], 0, 80 ) ); ?><?php echo strlen( $req['url'] ) > 80 ? '...' : ''; ?>
-								</code>
-							</td>
-							<td><?php echo esc_html( $req['method'] ?? 'GET' ); ?></td>
-							<td class="<?php echo esc_attr( ( $req['duration'] ?? 0 ) > 1000 ? 'bad' : ( ( $req['duration'] ?? 0 ) > 500 ? 'warn' : '' ) ); ?>">
-								<?php echo isset( $req['duration'] ) ? esc_html( number_format( $req['duration'] ) ) . 'ms' : 'pending'; ?>
-							</td>
-							<td><?php echo isset( $req['status'] ) ? (int) $req['status'] : '—'; ?></td>
-						</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
-
-				<?php if ( $total_ms > 1000 ) : ?>
-				<p class="warn" style="margin-top:15px;">
-					<strong><?php echo esc_html( number_format( $total_ms / 1000, 1 ) ); ?>s</strong> spent on external HTTP requests.
-					Consider blocking unnecessary update checks or license pings on admin pages.
-				</p>
-				<?php endif; ?>
-			<?php endif; ?>
-		</div>
-		<?php
-	}
-
-	/**
-	 * Render execution time breakdown.
+	 * Render execution time breakdown (PHP vs Database).
 	 */
 	private static function render_execution_breakdown() {
 		$total_time = defined( 'WHODUNNIT_START' ) ? ( microtime( true ) - WHODUNNIT_START ) * 1000 : 0;
 
-		// Get DB time from SAVEQUERIES if available.
 		global $wpdb;
 		$db_time = 0;
 		if ( defined( 'SAVEQUERIES' ) && SAVEQUERIES && ! empty( $wpdb->queries ) ) {
 			$db_time = array_sum( array_column( $wpdb->queries, 1 ) ) * 1000;
 		}
 
-		// HTTP time.
-		$http_time = 0;
-		$requests  = $GLOBALS['whodunnit_http_requests'] ?? [];
-		foreach ( $requests as $req ) {
-			if ( isset( $req['duration'] ) ) {
-				$http_time += $req['duration'];
-			}
-		}
-
-		$php_time = max( 0, $total_time - $db_time - $http_time );
+		$php_time = max( 0, $total_time - $db_time );
 
 		if ( $total_time <= 0 ) {
 			return;
 		}
 
-		$db_pct   = round( ( $db_time / $total_time ) * 100 );
-		$http_pct = round( ( $http_time / $total_time ) * 100 );
-		$php_pct  = 100 - $db_pct - $http_pct;
+		$db_pct  = round( ( $db_time / $total_time ) * 100 );
+		$php_pct = max( 0, 100 - $db_pct );
 		?>
 		<div class="box">
 			<h2>Execution Time Breakdown</h2>
-			<p>Where is the time going? This shows the split between PHP processing, database queries, and external HTTP requests.</p>
+			<p>Where is the time going? Split between PHP processing and database queries.</p>
 
 			<div style="display:flex;gap:10px;margin-bottom:15px;">
 				<div class="stat">
@@ -1235,13 +1072,8 @@ class Whodunnit_Profiler {
 					<b style="color:#00a32a;"><?php echo esc_html( number_format( $db_time / 1000, 2 ) ); ?>s</b>
 					Database (<?php echo (int) $db_pct; ?>%)
 				</div>
-				<div class="stat">
-					<b style="color:#dba617;"><?php echo esc_html( number_format( $http_time / 1000, 2 ) ); ?>s</b>
-					HTTP (<?php echo (int) $http_pct; ?>%)
-				</div>
 			</div>
 
-			<!-- Visual bar -->
 			<div style="width:100%;height:30px;display:flex;border-radius:3px;overflow:hidden;margin-bottom:10px;">
 				<?php if ( $php_pct > 0 ) : ?>
 				<div style="width:<?php echo (int) $php_pct; ?>%;background:#2271b1;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:bold;">
@@ -1253,40 +1085,122 @@ class Whodunnit_Profiler {
 					<?php echo $db_pct > 10 ? 'DB ' . (int) $db_pct . '%' : ''; ?>
 				</div>
 				<?php endif; ?>
-				<?php if ( $http_pct > 0 ) : ?>
-				<div style="width:<?php echo (int) $http_pct; ?>%;background:#dba617;display:flex;align-items:center;justify-content:center;color:#fff;font-size:11px;font-weight:bold;">
-					<?php echo $http_pct > 10 ? 'HTTP ' . (int) $http_pct . '%' : ''; ?>
-				</div>
-				<?php endif; ?>
 			</div>
 
 			<?php if ( $php_pct > 70 && $total_time > 3000 ) : ?>
 			<div style="padding:10px;background:#fff8e5;border-left:4px solid #dba617;margin-top:10px;">
 				<strong>PHP is the bottleneck (<?php echo (int) $php_pct; ?>% of time).</strong>
-				The database is fast — most time is spent in PHP execution. Key factors:
+				The database is fast; most time is spent in PHP execution. Key factors:
 				<ul style="margin:10px 0 0 20px;">
 					<li><strong>OPcache</strong> — If disabled, PHP reparses thousands of files per request</li>
-					<li><strong>Plugin count</strong> — <?php echo (int) count( get_option( 'active_plugins', [] ) ); ?> plugins all initialize on every request</li>
-					<li><strong>Memory: <?php echo esc_html( number_format( memory_get_peak_usage( true ) / 1024 / 1024, 0 ) ); ?>MB</strong> — High memory = more GC pauses</li>
+					<li><strong>Plugin count</strong> — <?php echo (int) count( get_option( 'active_plugins', array() ) ); ?> plugins all initialise on every request</li>
+					<li><strong>Memory: <?php echo esc_html( number_format( memory_get_peak_usage( true ) / 1024 / 1024, 0 ) ); ?>MB</strong> — High memory means more GC pauses</li>
 					<li><strong>Shared hosting CPU</strong> — Other sites on the same server affect your speed</li>
 				</ul>
 			</div>
 			<?php endif; ?>
 
-			<?php if ( $http_pct > 30 && $http_time > 1000 ) : ?>
-			<div style="padding:10px;background:#fff8e5;border-left:4px solid #dba617;margin-top:10px;">
-				<strong>External HTTP requests are adding <?php echo esc_html( number_format( $http_time / 1000, 1 ) ); ?>s.</strong>
-				Plugins are making blocking API calls (license checks, update pings). Consider blocking non-essential HTTP requests on admin pages.
-			</div>
-			<?php endif; ?>
-
 			<p style="margin-top:10px;color:#888;font-size:12px;">
-				<em>PHP time = Total - Database - HTTP. Includes plugin initialization, hook execution, template rendering, and memory allocation.
+				<em>PHP time = Total - Database. Includes plugin initialisation, hook execution, template rendering, and memory allocation.
 				<?php if ( ! defined( 'SAVEQUERIES' ) || ! SAVEQUERIES ) : ?>
 					Enable Deep Scan for accurate DB time measurement.
 				<?php endif; ?>
 				</em>
 			</p>
+		</div>
+		<?php
+	}
+
+	/**
+	 * Render the Debug tab — query list grouped by source with filtering.
+	 *
+	 * Replaces the old `?perf=debug` page-replacement pattern with a normal
+	 * admin tab. Lives inside the regular Tools > Whodunnit lifecycle, so the
+	 * manage_options check from add_management_page() applies and there is no
+	 * need to intercept wp_footer or call exit().
+	 */
+	private static function render_debug_view() {
+		global $wpdb;
+
+		$savequeries_active = defined( 'SAVEQUERIES' ) && SAVEQUERIES;
+
+		if ( ! $savequeries_active || empty( $wpdb->queries ) ) {
+			?>
+			<div class="box">
+				<h2>Debug</h2>
+				<p>SAVEQUERIES isn't active for this request, or no queries have been recorded yet.</p>
+				<p>Open the <a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&tab=deep' ) ); ?>">Deep Scan</a> tab once, then return here to see the full query list.</p>
+			</div>
+			<?php
+			return;
+		}
+
+		$queries_by_source = array();
+
+		foreach ( $wpdb->queries as $q ) {
+			$sql    = $q[0];
+			$time   = $q[1] * 1000;
+			$trace  = $q[2];
+			$source = self::detect_source( $sql, $trace );
+
+			if ( ! isset( $queries_by_source[ $source ] ) ) {
+				$queries_by_source[ $source ] = array();
+			}
+
+			$queries_by_source[ $source ][] = array(
+				'sql'     => $sql,
+				'time_ms' => round( $time, 2 ),
+				'trace'   => $trace,
+			);
+		}
+
+		foreach ( $queries_by_source as $source => &$queries ) {
+			usort( $queries, function ( $a, $b ) {
+				return $b['time_ms'] <=> $a['time_ms'];
+			} );
+		}
+		unset( $queries );
+
+		$total_time   = array_sum( array_column( $wpdb->queries, 1 ) ) * 1000;
+		$total_memory = memory_get_peak_usage( true ) / 1024 / 1024;
+		?>
+		<div class="box">
+			<h2>Debug — Full Query List</h2>
+			<p>
+				Total Queries: <strong><?php echo (int) $wpdb->num_queries; ?></strong> |
+				Total Time: <strong><?php echo esc_html( number_format( $total_time, 0 ) ); ?>ms</strong> |
+				Memory: <strong><?php echo esc_html( number_format( $total_memory, 0 ) ); ?>MB</strong>
+			</p>
+
+			<p>
+				<input type="text" id="whodunnit-filter" placeholder="Filter queries (e.g., transient, gf_form, usermeta)..." style="padding:8px;width:300px;">
+			</p>
+
+			<?php foreach ( $queries_by_source as $source => $queries ) : ?>
+				<h3 style="margin-top:24px;border-bottom:1px solid #ccd0d4;padding-bottom:5px;">
+					<?php echo esc_html( $source ); ?>
+					<span style="color:#888;font-weight:normal;">
+						(<?php echo (int) count( $queries ); ?> queries,
+						<?php echo esc_html( number_format( array_sum( array_column( $queries, 'time_ms' ) ), 0 ) ); ?>ms)
+					</span>
+				</h3>
+
+				<?php
+				foreach ( $queries as $q ) :
+					$severity = $q['time_ms'] > 50 ? '#dc3232' : ( $q['time_ms'] > 20 ? '#dba617' : '#cccccc' );
+					?>
+					<div class="whodunnit-query" data-sql="<?php echo esc_attr( strtolower( $q['sql'] ) ); ?>"
+						 style="background:#fff;padding:10px;margin:5px 0;border-left:3px solid <?php echo esc_attr( $severity ); ?>;">
+						<div style="color:#dc3232;font-weight:bold;"><?php echo esc_html( number_format( $q['time_ms'], 2 ) ); ?>ms</div>
+						<div style="color:#2271b1;word-break:break-all;white-space:pre-wrap;font-family:monospace;font-size:12px;">
+							<?php echo esc_html( $q['sql'] ); ?>
+						</div>
+						<div style="color:#888;font-size:10px;margin-top:5px;max-height:60px;overflow:auto;">
+							<?php echo esc_html( $q['trace'] ); ?>
+						</div>
+					</div>
+				<?php endforeach; ?>
+			<?php endforeach; ?>
 		</div>
 		<?php
 	}
