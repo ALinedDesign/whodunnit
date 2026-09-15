@@ -1,11 +1,11 @@
 <?php
 /**
  * Plugin Name: Whodunnit
- * Plugin URI:  https://alineddesign.com/whodunnit
+ * Plugin URI:  https://docs.tracksies.com/docs/whodunnit/
  * Description: Lightweight performance profiler for WordPress. Shows which plugins are hogging your database with a real-time toast overlay and a detailed admin profiler page.
  * Version:     1.0.0
- * Author:      ALined Design
- * Author URI:  https://alineddesign.com
+ * Author:      Tracksies
+ * Author URI:  https://tracksies.com
  * License:     GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: whodunnit

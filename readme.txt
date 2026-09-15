@@ -1,8 +1,8 @@
 === Whodunnit ===
-Contributors: alineddesign
+Contributors: tracksies
 Tags: performance, profiler, debug, queries, database
 Requires at least: 6.0
-Tested up to: 7.0
+Tested up to: 7.1
 Requires PHP: 7.4
 Stable tag: 1.0.0
 License: GPL-2.0-or-later
@@ -68,6 +68,8 @@ Four tabs provide deep diagnostics:
 * Lightweight — no external dependencies, no database tables
 * Plugin-aware — identifies query sources by plugin, theme, or mu-plugin
 * Built-in suggestions for common performance issues
+
+Whodunnit is made by A Lined Design, a WordPress studio in Hobart, Tasmania. Every Tracksies plugin started as something a client site needed, and they all still run on the sites we build.
 
 == Installation ==
 
