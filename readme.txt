@@ -52,6 +52,8 @@ Four tabs provide deep diagnostics:
 * Filesystem health (cache directories, uploads, log files)
 * PHP configuration (memory, execution time, OPcache status)
 * Object cache detection (Redis, Memcached, or none)
+* Cron health (scheduled event count, overdue jobs, and which hooks schedule the most)
+* Active hooks analysis (callback counts on eight common hooks, so you can see what is crowded)
 * Execution time breakdown
 * Problem file detection (oversized logs, error files in web root)
 
@@ -101,7 +103,7 @@ Yes, with caveats. The Overview tab is safe for production use. Deep Scan and Se
 1. Toast overlay showing real-time performance metrics.
 2. Overview tab with memory, queries, and autoload analysis.
 3. Deep Scan showing query breakdown by plugin source.
-4. Server Health tab with filesystem and PHP diagnostics.
+4. Server Health tab with filesystem, PHP, cron and hook diagnostics.
 
 == Changelog ==
 
@@ -114,4 +116,5 @@ Yes, with caveats. The Overview tab is safe for production use. Deep Scan and Se
 * Autoloaded options analysis and database cleanup stats.
 * Rewrite rules analysis grouped by source plugin.
 * Filesystem health, PHP configuration, OPcache diagnostics, and object cache detection.
+* Cron health and active hooks analysis.
 * SAVEQUERIES enabled only for logged-in administrators, and only on the tabs that need it.
