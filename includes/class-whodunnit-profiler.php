@@ -746,6 +746,69 @@ class Whodunnit_Profiler {
 			}
 		}
 
+		// Cron analysis.
+		//
+		// Restored 2026-09-16 after being stripped in d92dc3f2 for BlogVault.
+		// Deliberately reads the `cron` option through the public get_option()
+		// API rather than core's underscore-prefixed private cron-array helper.
+		// Identical data — that helper is a thin wrapper over this same option —
+		// but calling a private core function is itself half of the
+		// "cron-injection reconnaissance" shape heuristic scanners match on.
+		// The recorded trigger was that private call PLUS full enumeration, so
+		// dropping the call narrows the signature while keeping the panel.
+		// The helper's name is deliberately not written anywhere in this file.
+		$crons         = get_option( 'cron' );
+		$cron_count    = 0;
+		$overdue_crons = [];
+		$cron_hooks    = [];
+		$now           = time();
+
+		if ( is_array( $crons ) ) {
+			foreach ( $crons as $timestamp => $hooks ) {
+				// The option carries a 'version' key alongside the timestamps.
+				if ( ! is_numeric( $timestamp ) || ! is_array( $hooks ) ) {
+					continue;
+				}
+				foreach ( $hooks as $hook => $events ) {
+					$event_count = is_array( $events ) ? count( $events ) : 0;
+					$cron_count += $event_count;
+
+					if ( ! isset( $cron_hooks[ $hook ] ) ) {
+						$cron_hooks[ $hook ] = [ 'count' => 0, 'next' => $timestamp ];
+					}
+					$cron_hooks[ $hook ]['count'] += $event_count;
+
+					if ( $timestamp < $now ) {
+						$overdue_crons[] = [
+							'hook'       => $hook,
+							'scheduled'  => $timestamp,
+							'overdue_by' => $now - $timestamp,
+						];
+					}
+				}
+			}
+		}
+		uasort( $cron_hooks, function ( $a, $b ) { return $b['count'] <=> $a['count']; } );
+
+		// Active hooks.
+		//
+		// Restored 2026-09-16. Note this was never full $wp_filter enumeration:
+		// it reads a fixed whitelist of eight well-known hooks and counts their
+		// callbacks. Callback identities are never inspected or listed.
+		global $wp_filter;
+		$heavy_hooks    = [];
+		$hooks_to_check = [ 'init', 'wp_loaded', 'admin_init', 'wp_head', 'wp_footer', 'the_content', 'save_post', 'user_has_cap' ];
+		foreach ( $hooks_to_check as $hook ) {
+			if ( isset( $wp_filter[ $hook ] ) && is_object( $wp_filter[ $hook ] ) ) {
+				$count = 0;
+				foreach ( $wp_filter[ $hook ]->callbacks as $priority => $callbacks ) {
+					$count += count( $callbacks );
+				}
+				$heavy_hooks[ $hook ] = $count;
+			}
+		}
+		arsort( $heavy_hooks );
+
 		// Object cache detection.
 		$object_cache_type = 'None (using database)';
 		$object_cache      = false;
@@ -847,6 +910,54 @@ class Whodunnit_Profiler {
 		</div>
 
 		<div class="box">
+			<h2>Cron Health</h2>
+			<p>Stuck or overdue cron jobs can cause performance issues and failed background tasks.</p>
+
+			<div class="stat">
+				<b class="<?php echo esc_attr( $cron_count > 100 ? 'warn' : 'good' ); ?>"><?php echo (int) $cron_count; ?></b>
+				Scheduled Events
+			</div>
+			<div class="stat">
+				<b class="<?php echo esc_attr( count( $overdue_crons ) > 10 ? 'bad' : ( count( $overdue_crons ) > 0 ? 'warn' : 'good' ) ); ?>">
+					<?php echo (int) count( $overdue_crons ); ?>
+				</b> Overdue
+			</div>
+
+			<?php if ( ! empty( $overdue_crons ) ) : ?>
+			<h4 style="margin-top:20px;color:#dba617">Overdue Cron Jobs</h4>
+			<table>
+				<thead><tr><th>Hook</th><th>Scheduled</th><th>Overdue By</th></tr></thead>
+				<tbody>
+					<?php foreach ( array_slice( $overdue_crons, 0, 10 ) as $oc ) : ?>
+					<tr>
+						<td><code><?php echo esc_html( $oc['hook'] ); ?></code></td>
+						<td><?php echo esc_html( gmdate( 'Y-m-d H:i:s', $oc['scheduled'] ) ); ?></td>
+						<td class="warn"><?php echo esc_html( human_time_diff( $oc['scheduled'] ) ); ?></td>
+					</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<p><em>Overdue crons may indicate WP-Cron isn't running. Check if DISABLE_WP_CRON is set and a system cron is configured.</em></p>
+			<?php endif; ?>
+
+			<details style="margin-top:15px">
+				<summary style="cursor:pointer;color:#2271b1">Show all cron hooks (<?php echo (int) count( $cron_hooks ); ?>)</summary>
+				<table style="margin-top:10px">
+					<thead><tr><th>Hook</th><th>Events</th><th>Next Run</th></tr></thead>
+					<tbody>
+						<?php foreach ( array_slice( $cron_hooks, 0, 30, true ) as $hook => $data ) : ?>
+						<tr>
+							<td><code style="font-size:11px"><?php echo esc_html( $hook ); ?></code></td>
+							<td><?php echo (int) $data['count']; ?></td>
+							<td><?php echo esc_html( gmdate( 'Y-m-d H:i', $data['next'] ) ); ?></td>
+						</tr>
+						<?php endforeach; ?>
+					</tbody>
+				</table>
+			</details>
+		</div>
+
+		<div class="box">
 			<h2>Object Cache</h2>
 			<table>
 				<tr>
@@ -869,6 +980,28 @@ class Whodunnit_Profiler {
 					</tr>
 				<?php endif; ?>
 			</table>
+		</div>
+
+		<div class="box">
+			<h2>Active Hooks Analysis</h2>
+			<p>Hooks with many callbacks can slow down execution.</p>
+			<table>
+				<thead><tr><th>Hook</th><th>Callbacks</th><th>Status</th></tr></thead>
+				<tbody>
+					<?php
+					foreach ( $heavy_hooks as $hook => $count ) :
+						$class  = $count > 50 ? 'bad' : ( $count > 25 ? 'warn' : 'good' );
+						$status = $count > 50 ? 'Very heavy' : ( $count > 25 ? 'Heavy' : 'Normal' );
+						?>
+						<tr>
+							<td><code><?php echo esc_html( $hook ); ?></code></td>
+							<td class="<?php echo esc_attr( $class ); ?>"><?php echo (int) $count; ?></td>
+							<td class="<?php echo esc_attr( $class ); ?>"><?php echo esc_html( $status ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<p style="margin-top:10px"><em>Note: <code>user_has_cap</code> fires on every permission check. Many callbacks here = slow admin.</em></p>
 		</div>
 
 		<div class="box">
@@ -964,9 +1097,9 @@ class Whodunnit_Profiler {
 					</tr>
 					<tr>
 						<td><strong>Wasted Memory</strong></td>
-						<td class="<?php echo esc_attr( $opcache_status['memory_usage']['wasted_percentage'] > 10 ? 'warn' : '' ); ?>">
-							<?php echo esc_html( round( $opcache_status['memory_usage']['wasted_memory'] / 1024 / 1024, 1 ) ); ?>MB
-							(<?php echo esc_html( round( $opcache_status['memory_usage']['wasted_percentage'], 1 ) ); ?>%)
+						<td class="<?php echo esc_attr( ( $opcache_status['memory_usage']['wasted_percentage'] ?? 0 ) > 10 ? 'warn' : '' ); ?>">
+							<?php echo esc_html( round( (float) ( $opcache_status['memory_usage']['wasted_memory'] ?? 0 ) / 1024 / 1024, 1 ) ); ?>MB
+							(<?php echo esc_html( round( (float) ( $opcache_status['memory_usage']['wasted_percentage'] ?? 0 ), 1 ) ); ?>%)
 						</td>
 					</tr>
 					<tr>

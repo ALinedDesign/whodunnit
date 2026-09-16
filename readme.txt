@@ -69,7 +69,7 @@ Four tabs provide deep diagnostics:
 * Plugin-aware — identifies query sources by plugin, theme, or mu-plugin
 * Built-in suggestions for common performance issues
 
-Whodunnit is made by A Lined Design, a WordPress studio in Hobart, Tasmania. Every Tracksies plugin started as something a client site needed, and they all still run on the sites we build.
+Whodunnit is a Tracksies plugin made by A Lined Design, a WordPress studio in Hobart, Tasmania. Every one of them started as something a client site needed, and they all still run on the sites we build. The full range lives at tracksies.com. For more about the studio, or custom site work, see alineddesign.com.
 
 == Installation ==
 
