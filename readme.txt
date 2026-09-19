@@ -1,4 +1,4 @@
-=== Whodunnit ===
+=== Dobsie ===
 Contributors: tracksies
 Tags: performance, profiler, debug, queries, database
 Requires at least: 6.0
@@ -8,11 +8,21 @@ Stable tag: 1.0.0
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Lightweight performance profiler. Shows which plugins are hogging your database via toast overlay and admin profiler.
+Find out which plugin is slowing your site down, in a panel small enough to actually read. Queries, memory, autoloaded data and OPcache.
 
 == Description ==
 
-Whodunnit is a lightweight performance profiler that helps WordPress administrators identify which plugins are consuming the most database resources.
+Your site got slow. Something is running too many database queries, and you would like to know what.
+
+Tools exist that answer this. The trouble is that reading them turns out to be its own skill, and plenty of people open one, meet a wall of tabs and numbers, and quietly close it again assuming they are the problem. They are not. The information was there. It was not readable.
+
+Dobsie shows you less, and shows it where you already are.
+
+A small panel sits in the corner of the page you were already looking at. How long the page took, how many queries it ran and how long those took, peak memory, and a bar chart of which plugin is responsible for what. Queries slower than 20ms are called out on their own. When the answer is one badly behaved plugin, you can see it without going anywhere or learning anything first.
+
+When you want the detail, Tools > Dobsie has it, including several things that are genuinely hard to find out on your own. Whether OPcache is switched on and actually working. How much autoloaded data every single page request is dragging along, and which options are the worst of it. Which plugin owns which rewrite rules. Whether your cron is healthy.
+
+Only administrators see any of it, on the front end and in the admin alike.
 
 = Real-time Toast Overlay =
 
@@ -26,7 +36,7 @@ A floating dark-themed panel appears on every page, showing:
 
 The toast is only visible to administrators and can be minimized, closed, or permanently hidden. Add `?perf=0` to any URL to temporarily hide it.
 
-= Admin Profiler Page (Tools > Whodunnit) =
+= Admin Profiler Page (Tools > Dobsie) =
 
 Four tabs provide deep diagnostics:
 
@@ -71,13 +81,13 @@ Four tabs provide deep diagnostics:
 * Plugin-aware — identifies query sources by plugin, theme, or mu-plugin
 * Built-in suggestions for common performance issues
 
-Whodunnit is a Tracksies plugin made by A Lined Design, a WordPress studio in Hobart, Tasmania. Every one of them started as something a client site needed, and they all still run on the sites we build. The full range lives at tracksies.com. For more about the studio, or custom site work, see alineddesign.com.
+Dobsie is a Tracksies plugin made by A Lined Design, a WordPress studio in Hobart, Tasmania. Every one of them started as something a client site needed, and they all still run on the sites we build. The full range lives at tracksies.com. For more about the studio, or custom site work, see alineddesign.com.
 
 == Installation ==
 
-1. Upload the `whodunnit` folder to `/wp-content/plugins/`.
+1. Upload the `dobsie` folder to `/wp-content/plugins/`.
 2. Activate the plugin through the Plugins menu.
-3. Visit Tools > Whodunnit for the full profiler.
+3. Visit Tools > Dobsie for the full profiler.
 4. The toast overlay appears automatically on all pages (admin-only).
 
 == Frequently Asked Questions ==
@@ -88,11 +98,11 @@ No. The toast overlay and SAVEQUERIES are only enabled for administrators. Regul
 
 = How do I hide the toast overlay? =
 
-Click the X button to hide it (sets a cookie). Or go to Tools > Whodunnit and uncheck "Enable performance toast overlay" to disable it completely.
+Click the X button to hide it (sets a cookie). Or go to Tools > Dobsie and uncheck "Enable performance toast overlay" to disable it completely.
 
 = What does Deep Scan do differently? =
 
-Deep Scan enables the SAVEQUERIES constant, which records every database query with its execution time and stack trace. This lets Whodunnit identify exactly which plugin generated each query. It adds overhead, so use it for diagnosis rather than leaving it on permanently.
+Deep Scan enables the SAVEQUERIES constant, which records every database query with its execution time and stack trace. This lets Dobsie identify exactly which plugin generated each query. It adds overhead, so use it for diagnosis rather than leaving it on permanently.
 
 = Can I use this on a production site? =
 

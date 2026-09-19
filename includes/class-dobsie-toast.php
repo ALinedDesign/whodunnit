@@ -1,33 +1,33 @@
 <?php
 /**
- * Whodunnit Toast — Real-time performance overlay.
+ * Dobsie Toast — Real-time performance overlay.
  *
  * Floating dark-themed panel on every page showing total load time, query
  * count, DB time, peak memory, top sources, and slow queries. Only visible
  * to administrators.
  *
- * Controls (via assets/js/whodunnit.js):
+ * Controls (via assets/js/dobsie.js):
  *   ?perf=0   Hide toast for this request
  *   ?perf=1   Show toast (overrides cookie)
  *   Minimize  Collapse the body
  *   Close     Hide and set 30-day cookie
  *
- * Full query inspection lives on the profiler page (Tools > Whodunnit > Debug),
+ * Full query inspection lives on the profiler page (Tools > Dobsie > Debug),
  * not as a footer-injected page replacement.
  *
- * @package Whodunnit
+ * @package Dobsie
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class Whodunnit_Toast {
+class Dobsie_Toast {
 
 	private static $start_time;
 
 	public static function init() {
-		if ( get_option( 'whodunnit_toast_enabled', '1' ) !== '1' ) {
+		if ( get_option( 'dobsie_toast_enabled', '1' ) !== '1' ) {
 			return;
 		}
 
@@ -45,14 +45,14 @@ class Whodunnit_Toast {
 			return;
 		}
 
-		$perf = whodunnit_read_query_param( 'perf' );
+		$perf = dobsie_read_query_param( 'perf' );
 
 		if ( $perf === '0' ) {
 			return;
 		}
 
 		// If the user has hidden the toast, show a small re-open button instead.
-		if ( $perf !== '1' && whodunnit_read_cookie( 'whodunnit_toast_hidden' ) === '1' ) {
+		if ( $perf !== '1' && dobsie_read_cookie( 'dobsie_toast_hidden' ) === '1' ) {
 			self::render_show_button();
 			return;
 		}
@@ -74,7 +74,7 @@ class Whodunnit_Toast {
 				$trace      = $q[2];
 				$query_time += $time;
 
-				$source = Whodunnit_Profiler::detect_source( $sql, $trace );
+				$source = Dobsie_Profiler::detect_source( $sql, $trace );
 
 				if ( ! isset( $by_source[ $source ] ) ) {
 					$by_source[ $source ] = array( 'count' => 0, 'time' => 0 );
@@ -103,9 +103,9 @@ class Whodunnit_Toast {
 		$time_color  = $total_time > 4 ? '#dc3232' : ( $total_time > 2 ? '#ffb900' : '#46b450' );
 		$query_color = $query_count > 500 ? '#dc3232' : ( $query_count > 200 ? '#ffb900' : '#46b450' );
 
-		$report_url = admin_url( 'tools.php?page=whodunnit&tab=deep' );
+		$report_url = admin_url( 'tools.php?page=dobsie&tab=deep' );
 		?>
-		<div id="whodunnit-toast" style="
+		<div id="dobsie-toast" style="
 			position: fixed;
 			bottom: 10px;
 			right: 10px;
@@ -128,16 +128,16 @@ class Whodunnit_Toast {
 				align-items: center;
 				border-bottom: 1px solid #333;
 			">
-				<span style="font-weight: bold; color: #fff;">Whodunnit</span>
+				<span style="font-weight: bold; color: #fff;">Dobsie</span>
 				<div>
-					<span data-whodunnit-action="minimize" role="button" tabindex="0"
+					<span data-dobsie-action="minimize" role="button" tabindex="0"
 						  style="cursor: pointer; padding: 2px 6px; margin-right: 5px;">_</span>
-					<span data-whodunnit-action="close" role="button" tabindex="0"
+					<span data-dobsie-action="close" role="button" tabindex="0"
 						  style="cursor: pointer; color: #888; padding: 2px 6px;">x</span>
 				</div>
 			</div>
 
-			<div id="whodunnit-toast-body">
+			<div id="dobsie-toast-body">
 				<div style="
 					display: flex;
 					padding: 10px;
@@ -239,7 +239,7 @@ class Whodunnit_Toast {
 	 */
 	private static function render_show_button() {
 		?>
-		<div id="whodunnit-toggle" role="button" tabindex="0" style="
+		<div id="dobsie-toggle" role="button" tabindex="0" style="
 			position: fixed;
 			bottom: 10px;
 			right: 10px;
@@ -253,7 +253,7 @@ class Whodunnit_Toast {
 			cursor: pointer;
 			opacity: 0.7;
 		">
-			Whodunnit
+			Dobsie
 		</div>
 		<?php
 	}

@@ -1,5 +1,5 @@
 /**
- * Whodunnit toast + admin handlers.
+ * Dobsie toast + admin handlers.
  *
  * Replaces inline onclick handlers so the plugin doesn't trip malware scanners
  * that pattern-match document.cookie writes from inline JS.
@@ -7,7 +7,7 @@
 (function () {
 	'use strict';
 
-	var COOKIE_NAME = 'whodunnit_toast_hidden';
+	var COOKIE_NAME = 'dobsie_toast_hidden';
 
 	function setCookie( name, value, days ) {
 		var expires = '';
@@ -24,14 +24,14 @@
 	}
 
 	function bindToast() {
-		var toast = document.getElementById( 'whodunnit-toast' );
+		var toast = document.getElementById( 'dobsie-toast' );
 		if ( ! toast ) {
 			return;
 		}
 
-		var body    = document.getElementById( 'whodunnit-toast-body' );
-		var minBtn  = toast.querySelector( '[data-whodunnit-action="minimize"]' );
-		var closeBtn = toast.querySelector( '[data-whodunnit-action="close"]' );
+		var body    = document.getElementById( 'dobsie-toast-body' );
+		var minBtn  = toast.querySelector( '[data-dobsie-action="minimize"]' );
+		var closeBtn = toast.querySelector( '[data-dobsie-action="close"]' );
 
 		if ( minBtn && body ) {
 			minBtn.addEventListener( 'click', function () {
@@ -50,7 +50,7 @@
 	}
 
 	function bindShowButton() {
-		var toggle = document.getElementById( 'whodunnit-toggle' );
+		var toggle = document.getElementById( 'dobsie-toggle' );
 		if ( ! toggle ) {
 			return;
 		}
@@ -61,9 +61,9 @@
 	}
 
 	function bindPageTest() {
-		var btn    = document.getElementById( 'whodunnit-test-btn' );
-		var input  = document.getElementById( 'whodunnit-test-url' );
-		var result = document.getElementById( 'whodunnit-result' );
+		var btn    = document.getElementById( 'dobsie-test-btn' );
+		var input  = document.getElementById( 'dobsie-test-url' );
+		var result = document.getElementById( 'dobsie-result' );
 		if ( ! btn || ! input || ! result ) {
 			return;
 		}
@@ -91,13 +91,13 @@
 	}
 
 	function bindDebugFilter() {
-		var filter = document.getElementById( 'whodunnit-filter' );
+		var filter = document.getElementById( 'dobsie-filter' );
 		if ( ! filter ) {
 			return;
 		}
 		filter.addEventListener( 'keyup', function () {
 			var f       = filter.value.toLowerCase();
-			var queries = document.querySelectorAll( '.whodunnit-query' );
+			var queries = document.querySelectorAll( '.dobsie-query' );
 			for ( var i = 0; i < queries.length; i++ ) {
 				var sql = queries[ i ].getAttribute( 'data-sql' ) || '';
 				queries[ i ].style.display = ( sql.indexOf( f ) !== -1 ) ? 'block' : 'none';

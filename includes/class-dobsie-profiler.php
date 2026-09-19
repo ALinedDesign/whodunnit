@@ -1,20 +1,20 @@
 <?php
 /**
- * Whodunnit Profiler — Admin page with deep diagnostics.
+ * Dobsie Profiler — Admin page with deep diagnostics.
  *
- * Access: Tools > Whodunnit
+ * Access: Tools > Dobsie
  * Query params:
  *   ?savequeries=1  — Detailed query breakdown by plugin source
  *   ?serverhealth=1 — Filesystem, PHP config, object cache diagnostics
  *
- * @package Whodunnit
+ * @package Dobsie
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-class Whodunnit_Profiler {
+class Dobsie_Profiler {
 
 	/**
 	 * Hook suffix returned by add_management_page(), used to scope the
@@ -34,10 +34,10 @@ class Whodunnit_Profiler {
 	 */
 	public static function add_menu_page() {
 		self::$hook_suffix = add_management_page(
-			'Whodunnit',
-			'Whodunnit',
+			'Dobsie',
+			'Dobsie',
 			'manage_options',
-			'whodunnit',
+			'dobsie',
 			[ __CLASS__, 'render_page' ]
 		);
 	}
@@ -55,9 +55,9 @@ class Whodunnit_Profiler {
 			return;
 		}
 
-		wp_register_style( 'whodunnit-admin', false, array(), WHODUNNIT_VERSION );
-		wp_enqueue_style( 'whodunnit-admin' );
-		wp_add_inline_style( 'whodunnit-admin', wp_kses( self::get_admin_css(), array() ) );
+		wp_register_style( 'dobsie-admin', false, array(), DOBSIE_VERSION );
+		wp_enqueue_style( 'dobsie-admin' );
+		wp_add_inline_style( 'dobsie-admin', wp_kses( self::get_admin_css(), array() ) );
 	}
 
 	/**
@@ -66,11 +66,11 @@ class Whodunnit_Profiler {
 	public static function render_page() {
 		global $wpdb;
 
-		// Tab routing — sanitised at read in whodunnit_read_query_param().
+		// Tab routing — sanitised at read in dobsie_read_query_param().
 		// The page itself is gated by manage_options via add_management_page().
-		$tab               = whodunnit_read_query_param( 'tab' );
-		$legacy_savequeries = whodunnit_read_query_param( 'savequeries' ) === '1';
-		$legacy_health      = whodunnit_read_query_param( 'serverhealth' ) === '1';
+		$tab               = dobsie_read_query_param( 'tab' );
+		$legacy_savequeries = dobsie_read_query_param( 'savequeries' ) === '1';
+		$legacy_health      = dobsie_read_query_param( 'serverhealth' ) === '1';
 
 		$savequeries_on  = $tab === 'deep' || $legacy_savequeries;
 		$serverhealth_on = $tab === 'health' || $legacy_health;
@@ -79,7 +79,7 @@ class Whodunnit_Profiler {
 		$memory        = memory_get_peak_usage( true ) / 1024 / 1024;
 		$plugins       = count( get_option( 'active_plugins', array() ) );
 		$queries       = $wpdb->num_queries;
-		$toast_enabled = get_option( 'whodunnit_toast_enabled', '1' );
+		$toast_enabled = get_option( 'dobsie_toast_enabled', '1' );
 
 		// Autoload analysis.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Performance diagnostic tool, caching would defeat the purpose.
@@ -142,18 +142,18 @@ class Whodunnit_Profiler {
 		}
 
 		?>
-		<div class="wrap whodunnit">
-			<h1>Whodunnit</h1>
+		<div class="wrap dobsie">
+			<h1>Dobsie</h1>
 			<p class="description">Who's hogging your database? Let's find out.</p>
 
 			<div class="nav-tabs">
-				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit' ) ); ?>"
+				<a href="<?php echo esc_url( admin_url( 'tools.php?page=dobsie' ) ); ?>"
 				   class="<?php echo esc_attr( ! $savequeries_on && ! $serverhealth_on && ! $debug_on ? 'active' : '' ); ?>">Overview</a>
-				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&tab=deep' ) ); ?>"
+				<a href="<?php echo esc_url( admin_url( 'tools.php?page=dobsie&tab=deep' ) ); ?>"
 				   class="<?php echo esc_attr( $savequeries_on ? 'active' : '' ); ?>">Deep Scan</a>
-				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&tab=health' ) ); ?>"
+				<a href="<?php echo esc_url( admin_url( 'tools.php?page=dobsie&tab=health' ) ); ?>"
 				   class="<?php echo esc_attr( $serverhealth_on ? 'active' : '' ); ?>">Server Health</a>
-				<a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&tab=debug' ) ); ?>"
+				<a href="<?php echo esc_url( admin_url( 'tools.php?page=dobsie&tab=debug' ) ); ?>"
 				   class="<?php echo esc_attr( $debug_on ? 'active' : '' ); ?>">Debug</a>
 			</div>
 
@@ -256,34 +256,34 @@ class Whodunnit_Profiler {
 	 */
 	private static function get_admin_css() {
 		return '
-			.whodunnit { max-width: 1000px; }
-			.whodunnit .box { background: #fff; border: 1px solid #ccd0d4; padding: 20px; margin-bottom: 20px; }
-			.whodunnit .stat { display: inline-block; background: #f9f9f9; padding: 15px 25px; margin: 0 10px 10px 0; text-align: center; }
-			.whodunnit .stat b { font-size: 28px; display: block; }
-			.whodunnit .bad { color: #d63638; }
-			.whodunnit .warn { color: #dba617; }
-			.whodunnit .good { color: #00a32a; }
-			.whodunnit table { width: 100%; border-collapse: collapse; }
-			.whodunnit th, .whodunnit td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
-			.whodunnit th { background: #f9f9f9; }
-			.whodunnit code { background: #f0f0f0; padding: 2px 5px; font-size: 12px; }
-			.whodunnit .sql { max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-			.whodunnit .bar { background: #2271b1; height: 12px; display: inline-block; }
-			.whodunnit .bar-bg { background: #f0f0f0; width: 150px; display: inline-block; margin-right: 10px; }
-			.whodunnit .nav-tabs { margin-bottom: 20px; }
-			.whodunnit .nav-tabs a { display: inline-block; padding: 8px 16px; background: #f0f0f0; margin-right: 5px; text-decoration: none; color: #333; border-radius: 3px 3px 0 0; }
-			.whodunnit .nav-tabs a.active { background: #2271b1; color: #fff; }
-			.whodunnit .toast-toggle { margin-bottom: 20px; padding: 10px 15px; background: #f9f9f9; border: 1px solid #ccd0d4; display: flex; align-items: center; gap: 10px; }
+			.dobsie { max-width: 1000px; }
+			.dobsie .box { background: #fff; border: 1px solid #ccd0d4; padding: 20px; margin-bottom: 20px; }
+			.dobsie .stat { display: inline-block; background: #f9f9f9; padding: 15px 25px; margin: 0 10px 10px 0; text-align: center; }
+			.dobsie .stat b { font-size: 28px; display: block; }
+			.dobsie .bad { color: #d63638; }
+			.dobsie .warn { color: #dba617; }
+			.dobsie .good { color: #00a32a; }
+			.dobsie table { width: 100%; border-collapse: collapse; }
+			.dobsie th, .dobsie td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
+			.dobsie th { background: #f9f9f9; }
+			.dobsie code { background: #f0f0f0; padding: 2px 5px; font-size: 12px; }
+			.dobsie .sql { max-width: 500px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+			.dobsie .bar { background: #2271b1; height: 12px; display: inline-block; }
+			.dobsie .bar-bg { background: #f0f0f0; width: 150px; display: inline-block; margin-right: 10px; }
+			.dobsie .nav-tabs { margin-bottom: 20px; }
+			.dobsie .nav-tabs a { display: inline-block; padding: 8px 16px; background: #f0f0f0; margin-right: 5px; text-decoration: none; color: #333; border-radius: 3px 3px 0 0; }
+			.dobsie .nav-tabs a.active { background: #2271b1; color: #fff; }
+			.dobsie .toast-toggle { margin-bottom: 20px; padding: 10px 15px; background: #f9f9f9; border: 1px solid #ccd0d4; display: flex; align-items: center; gap: 10px; }
 		';
 	}
 
 	private static function render_toast_toggle( $toast_enabled ) {
 		?>
 		<form method="post" action="options.php" class="toast-toggle">
-			<?php settings_fields( 'whodunnit_settings' ); ?>
+			<?php settings_fields( 'dobsie_settings' ); ?>
 			<label>
-				<input type="hidden" name="whodunnit_toast_enabled" value="0">
-				<input type="checkbox" name="whodunnit_toast_enabled" value="1"
+				<input type="hidden" name="dobsie_toast_enabled" value="0">
+				<input type="checkbox" name="dobsie_toast_enabled" value="1"
 					<?php checked( $toast_enabled, '1' ); ?>>
 				Enable performance toast overlay
 			</label>
@@ -527,10 +527,10 @@ class Whodunnit_Profiler {
 		<div class="box">
 			<h2>Quick Page Test</h2>
 			<p>
-				<input type="text" id="whodunnit-test-url" value="<?php echo esc_url( home_url( '/' ) ); ?>" style="width:70%">
-				<button type="button" id="whodunnit-test-btn" class="button">Test</button>
+				<input type="text" id="dobsie-test-url" value="<?php echo esc_url( home_url( '/' ) ); ?>" style="width:70%">
+				<button type="button" id="dobsie-test-btn" class="button">Test</button>
 			</p>
-			<div id="whodunnit-result"></div>
+			<div id="dobsie-result"></div>
 		</div>
 		<?php
 	}
@@ -829,9 +829,9 @@ class Whodunnit_Profiler {
 		// Object cache test.
 		$object_cache_working = false;
 		if ( function_exists( 'wp_cache_set' ) ) {
-			wp_cache_set( 'whodunnit_test', 'ok', '', 60 );
-			$object_cache_working = ( wp_cache_get( 'whodunnit_test' ) === 'ok' );
-			wp_cache_delete( 'whodunnit_test' );
+			wp_cache_set( 'dobsie_test', 'ok', '', 60 );
+			$object_cache_working = ( wp_cache_get( 'dobsie_test' ) === 'ok' );
+			wp_cache_delete( 'dobsie_test' );
 		}
 
 		// Problem files.
@@ -846,7 +846,7 @@ class Whodunnit_Profiler {
 		}
 
 		// get_home_path() requires wp-admin/includes/file.php. This method only
-		// runs on the Tools > Whodunnit page, which is admin-only, so the
+		// runs on the Tools > Dobsie page, which is admin-only, so the
 		// include is always available in this context.
 		if ( ! function_exists( 'get_home_path' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
@@ -1171,7 +1171,7 @@ class Whodunnit_Profiler {
 	 * Render execution time breakdown (PHP vs Database).
 	 */
 	private static function render_execution_breakdown() {
-		$total_time = defined( 'WHODUNNIT_START' ) ? ( microtime( true ) - WHODUNNIT_START ) * 1000 : 0;
+		$total_time = defined( 'DOBSIE_START' ) ? ( microtime( true ) - DOBSIE_START ) * 1000 : 0;
 
 		global $wpdb;
 		$db_time = 0;
@@ -1248,7 +1248,7 @@ class Whodunnit_Profiler {
 	 * Render the Debug tab — query list grouped by source with filtering.
 	 *
 	 * Replaces the old `?perf=debug` page-replacement pattern with a normal
-	 * admin tab. Lives inside the regular Tools > Whodunnit lifecycle, so the
+	 * admin tab. Lives inside the regular Tools > Dobsie lifecycle, so the
 	 * manage_options check from add_management_page() applies and there is no
 	 * need to intercept wp_footer or call exit().
 	 */
@@ -1262,7 +1262,7 @@ class Whodunnit_Profiler {
 			<div class="box">
 				<h2>Debug</h2>
 				<p>SAVEQUERIES isn't active for this request, or no queries have been recorded yet.</p>
-				<p>Open the <a href="<?php echo esc_url( admin_url( 'tools.php?page=whodunnit&tab=deep' ) ); ?>">Deep Scan</a> tab once, then return here to see the full query list.</p>
+				<p>Open the <a href="<?php echo esc_url( admin_url( 'tools.php?page=dobsie&tab=deep' ) ); ?>">Deep Scan</a> tab once, then return here to see the full query list.</p>
 			</div>
 			<?php
 			return;
@@ -1306,7 +1306,7 @@ class Whodunnit_Profiler {
 			</p>
 
 			<p>
-				<input type="text" id="whodunnit-filter" placeholder="Filter queries (e.g., transient, gf_form, usermeta)..." style="padding:8px;width:300px;">
+				<input type="text" id="dobsie-filter" placeholder="Filter queries (e.g., transient, gf_form, usermeta)..." style="padding:8px;width:300px;">
 			</p>
 
 			<?php foreach ( $queries_by_source as $source => $queries ) : ?>
@@ -1322,7 +1322,7 @@ class Whodunnit_Profiler {
 				foreach ( $queries as $q ) :
 					$severity = $q['time_ms'] > 50 ? '#dc3232' : ( $q['time_ms'] > 20 ? '#dba617' : '#cccccc' );
 					?>
-					<div class="whodunnit-query" data-sql="<?php echo esc_attr( strtolower( $q['sql'] ) ); ?>"
+					<div class="dobsie-query" data-sql="<?php echo esc_attr( strtolower( $q['sql'] ) ); ?>"
 						 style="background:#fff;padding:10px;margin:5px 0;border-left:3px solid <?php echo esc_attr( $severity ); ?>;">
 						<div style="color:#dc3232;font-weight:bold;"><?php echo esc_html( number_format( $q['time_ms'], 2 ) ); ?>ms</div>
 						<div style="color:#2271b1;word-break:break-all;white-space:pre-wrap;font-family:monospace;font-size:12px;">
